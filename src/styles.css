@@ -738,13 +738,126 @@ textarea {
 .breakball-editor {
   margin-top: 10px;
   display: grid;
+  gap: 8px;
+}
+
+.breaking-ball-editor-ui {
+  display: grid;
+  gap: 8px;
+}
+
+.breaking-ball-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.breaking-ball-card {
+  border: 1px solid #d0dae8;
+  border-radius: 10px;
+  padding: 9px;
+  background: linear-gradient(180deg, #ffffff, #f7fbff);
+  display: grid;
+  gap: 7px;
+}
+
+.breaking-ball-title {
+  margin: 0;
+  color: #1f365c;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.breaking-ball-items {
+  display: grid;
   gap: 6px;
+}
+
+.breaking-ball-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px;
+  align-items: flex-start;
+}
+
+.breaking-ball-field {
+  display: grid;
+  gap: 4px;
+}
+
+.breaking-ball-field label {
+  color: #4b5f7c;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.breaking-ball-level-label {
+  color: #4b5f7c;
+  font-size: 0.74rem;
+  font-weight: 700;
+  display: block;
+  height: 16px;
+  line-height: 16px;
+}
+
+.breaking-ball-field.level {
+  grid-template-columns: auto minmax(50px, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.breaking-ball-field.level.disabled {
+  opacity: 0.78;
+}
+
+.breaking-ball-fixed {
+  min-height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d6deea;
+  border-radius: 6px;
+  background: #f5f7fb;
+  color: #5f6b80;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.breaking-ball-meter-wrap {
+  margin-top: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.breaking-ball-meter-wrap label {
+  color: #4b5f7c;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.breaking-ball-meter {
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
+  aspect-ratio: 24 / 13;
+}
+
+.breaking-ball-meter-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.breaking-ball-meter-label {
+  font-family: "BIZ UDPGothic", "Yu Gothic UI", sans-serif;
+  font-size: 9px;
+  pointer-events: none;
 }
 
 .ability-group {
   display: grid;
   gap: 8px;
 }
+
 
 .hidden-data-input {
   display: none;
@@ -1228,7 +1341,12 @@ textarea {
   .trait-preview-grid.ranked,
   .trait-preview-grid.toggle,
   .position-primary-grid,
-  .position-toggle-grid {
+  .position-toggle-grid,
+  .breaking-ball-grid {
     grid-template-columns: 1fr;
+  }
+
+  .breaking-ball-meter {
+    max-width: 100%;
   }
 }

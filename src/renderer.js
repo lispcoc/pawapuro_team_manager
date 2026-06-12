@@ -380,6 +380,65 @@ const STRATEGY_EDITOR_CONFIGS = {
   }
 };
 
+const BREAKING_BALL_LEVELS = [1, 2, 3, 4, 5, 6, 7];
+
+const BREAKING_BALL_FAMILIES = [
+  {
+    id: "shoot",
+    label: "シュート系",
+    hasLevel: true,
+    options: ["シュート", "Hシュート", "高速シュート", "シンキングツーシーム"]
+  },
+  {
+    id: "straight",
+    label: "ストレート系",
+    hasLevel: false,
+    options: ["ツーシーム", "ツーシームファスト", "ムービングファスト", "超スローボール"]
+  },
+  {
+    id: "slider",
+    label: "スライダー系",
+    hasLevel: true,
+    options: ["スライダー", "Hスライダー", "Vスライダー", "カットボール", "スラーブ"]
+  },
+  {
+    id: "sinker",
+    label: "シンカー系",
+    hasLevel: true,
+    options: ["シンカー", "Hシンカー", "スクリュー", "サークルチェンジ", "シンキングスプリット", "チェンジアップ"]
+  },
+  {
+    id: "fork",
+    label: "フォーク系",
+    hasLevel: true,
+    options: ["フォーク", "SFF", "パーム", "Vフォーク", "ナックル"]
+  },
+  {
+    id: "curve",
+    label: "カーブ系",
+    hasLevel: true,
+    options: ["カーブ", "スローカーブ", "ドロップ", "ドロップカーブ", "ナックルカーブ", "パワーカーブ"]
+  }
+];
+
+const BREAKING_BALL_FAMILY_MAP = new Map(BREAKING_BALL_FAMILIES.map((family) => [family.id, family]));
+
+const BREAKING_BALL_OPTION_TO_FAMILY = new Map(
+  BREAKING_BALL_FAMILIES.flatMap((family) => family.options.map((name) => [name, family.id]))
+);
+
+const BREAKING_BALL_LAYOUT_RIGHT = [
+  ["shoot", "straight"],
+  ["slider", "sinker"],
+  ["fork", "curve"]
+];
+
+const BREAKING_BALL_LAYOUT_LEFT = [
+  ["straight", "shoot"],
+  ["sinker", "slider"],
+  ["curve", "fork"]
+];
+
 const state = {
   data: null,
   selectedTeamId: null,
@@ -430,7 +489,9 @@ function stringifyComparable(obj) {
 
 function buildFormSnapshot(form) {
   const snapshot = {};
+  const ignoredNames = new Set(["p_breakingBallsExtra"]);
   form.querySelectorAll("input[name], select[name], textarea[name]").forEach((field) => {
+    if (ignoredNames.has(field.name)) return;
     snapshot[field.name] = String(field.value ?? "");
   });
   return snapshot;
@@ -750,7 +811,13 @@ function buildPlayerSnapshot(player) {
   const pitcherStrategy = getPlayerStrategiesByMode(player, "pitcher").join(",");
   const hitterStrategy = getPlayerStrategiesByMode(player, "hitter").join(",");
   const breakingBalls = (player.pitcher?.breakingBalls || [])
-    .map((ball) => `${String(ball.name || "").trim()}:${toInt(ball.level, 1)}`)
+    .map((ball) => {
+      const name = String(ball.name || "").trim();
+      const familyId = getBreakingBallFamily(name);
+      const family = familyId ? BREAKING_BALL_FAMILY_MAP.get(familyId) : null;
+      const level = family?.hasLevel === false ? 0 : clamp(toInt(ball.level, 1), 1, 7);
+      return level > 0 ? `${name}:${level}` : name;
+    })
     .join("\n");
 
   return {
@@ -1279,6 +1346,253 @@ function splitCsv(text) {
     .filter(Boolean);
 }
 
+function extractThrowingHand(hand) {
+  const text = String(hand || "").trim();
+  if (text.includes("左投")) return "left";
+  if (text.includes("右投")) return "right";
+  return "right";
+}
+
+function getBreakingBallFamily(name) {
+  const value = String(name || "").trim();
+  if (!value) return null;
+  return BREAKING_BALL_OPTION_TO_FAMILY.get(value) || null;
+}
+
+function buildBreakingBallState(entries) {
+  const stateByFamily = Object.fromEntries(
+    BREAKING_BALL_FAMILIES.map((family) => [
+      family.id,
+      [
+        { name: "", level: family.hasLevel ? 1 : 0 },
+        { name: "", level: family.hasLevel ? 1 : 0 }
+      ]
+    ])
+  );
+  const extras = [];
+
+  for (const raw of Array.isArray(entries) ? entries : []) {
+    const name = String(raw?.name || "").trim();
+    if (!name) continue;
+
+    const familyId = getBreakingBallFamily(name);
+    if (!familyId) {
+      extras.push({ name, level: toInt(raw?.level, 1) });
+      continue;
+    }
+
+    const family = BREAKING_BALL_FAMILY_MAP.get(familyId);
+    const balls = stateByFamily[familyId];
+    let placed = false;
+    for (let i = 0; i < 2; i++) {
+      if (!balls[i].name) {
+        balls[i] = {
+          name,
+          level: family.hasLevel ? clamp(toInt(raw?.level, 1), 1, 7) : 0
+        };
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      extras.push({ name, level: toInt(raw?.level, 1) });
+    }
+  }
+
+  return { stateByFamily, extras };
+}
+
+function buildBreakingBallGrid(stateByFamily, throwHand) {
+  const layout = throwHand === "left" ? BREAKING_BALL_LAYOUT_LEFT : BREAKING_BALL_LAYOUT_RIGHT;
+  const orderedFamilyIds = layout.flat();
+
+  return orderedFamilyIds
+    .map((familyId) => {
+      const family = BREAKING_BALL_FAMILY_MAP.get(familyId);
+      const balls = stateByFamily[familyId] || [{ name: "", level: 1 }, { name: "", level: 1 }];
+
+      const ballHtml = balls.map((selected, ballIndex) => {
+        const levelControl = family.hasLevel
+          ? `
+            <div class="breaking-ball-field level">
+              <label>Lv</label>
+              <select data-breaking-ball-level="${escapeHtml(familyId)}-${ballIndex}">
+                ${BREAKING_BALL_LEVELS.map((level) => `<option value="${level}" ${toInt(selected.level, 1) === level ? "selected" : ""}>${level}</option>`).join("")}
+              </select>
+            </div>
+          `
+          : `
+            <div class="breaking-ball-field level disabled">
+              <span class="breaking-ball-level-label">Lv</span>
+              <div class="breaking-ball-fixed">-</div>
+            </div>
+          `;
+
+        return `
+          <div class="breaking-ball-item">
+            <div class="breaking-ball-field">
+              <select data-breaking-ball-name="${escapeHtml(familyId)}-${ballIndex}">
+                <option value="">なし</option>
+                ${family.options.map((name) => `<option value="${escapeHtml(name)}" ${selected.name === name ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}
+              </select>
+            </div>
+            ${levelControl}
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <div class="breaking-ball-card" data-breaking-ball-family="${escapeHtml(familyId)}">
+          <p class="breaking-ball-title">${escapeHtml(family.label)}</p>
+          <div class="breaking-ball-items">
+            ${ballHtml}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function composeBreakingBallsFromEditor(editor) {
+  const extrasRaw = editor.querySelector('input[name="p_breakingBallsExtra"]')?.value || "[]";
+  let extras = [];
+  try {
+    extras = JSON.parse(extrasRaw);
+  } catch {
+    extras = [];
+  }
+
+  const list = [];
+  for (const family of BREAKING_BALL_FAMILIES) {
+    for (let i = 0; i < 2; i++) {
+      const name = String(editor.querySelector(`[data-breaking-ball-name="${family.id}-${i}"]`)?.value || "").trim();
+      if (!name) continue;
+
+      if (family.hasLevel) {
+        const level = clamp(toInt(editor.querySelector(`[data-breaking-ball-level="${family.id}-${i}"]`)?.value, 1), 1, 7);
+        list.push({ name, level });
+      } else {
+        list.push({ name, level: 0 });
+      }
+    }
+  }
+
+  return [...list, ...extras.map((item) => ({ name: String(item?.name || "").trim(), level: toInt(item?.level, 1) })).filter((item) => item.name)];
+}
+
+function syncBreakingBallsFromEditor(form) {
+  const editor = form.querySelector("#breakingBallEditor");
+  const hidden = form.querySelector('textarea[name="p_breakingBalls"]');
+  if (!editor || !hidden) return;
+
+  const rows = composeBreakingBallsFromEditor(editor);
+  hidden.value = rows.map((item) => (item.level > 0 ? `${item.name}:${item.level}` : item.name)).join("\n");
+
+  const meter = form.querySelector("#breakingBallMeter");
+  const parsed = parseBreakingBalls(String(hidden?.value || ""));
+  const { stateByFamily } = buildBreakingBallState(parsed);
+  if (meter) {
+    meter.innerHTML = buildBreakingBallMeterSvg(stateByFamily);
+  }
+}
+
+function buildBreakingBallMeterSvg(stateByFamily) {
+  const family_order = ["slider", "curve", "fork", "sinker", "shoot"];
+  const family_colors = ["#ff6b6b", "#e6a8a8"];
+
+  const viewBoxWidth = 240;
+  const viewBoxHeight = 130;
+  const centerX = viewBoxWidth / 2;
+  const centerY = 55;
+  const meterRadius = 10;
+  const meterHeight = 40;
+
+  const startAngle = 0;
+  const anglePerMeter = 45;
+
+  let svgHtml = `<svg viewBox="0 0 ${viewBoxWidth} ${viewBoxHeight}" class="breaking-ball-meter-svg" xmlns="http://www.w3.org/2000/svg">`;
+
+  svgHtml += `<defs><linearGradient id="meterGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:#f0f0f0;stop-opacity:1" /><stop offset="100%" style="stop-color:#e0e0e0;stop-opacity:1" /></linearGradient></defs>`;
+
+  svgHtml += `<path d="M ${centerX - meterRadius} ${centerY} A ${meterRadius} ${meterRadius} 0 0 1 ${centerX + meterRadius} ${centerY}" stroke="#d0dae8" stroke-width="1.5" fill="none" />`;
+
+  family_order.forEach((familyId, index) => {
+    const balls = stateByFamily[familyId] || [{ name: "", level: 0 }, { name: "", level: 0 }];
+    const angle = startAngle + anglePerMeter * index;
+    const angleRad = (angle * Math.PI) / 180;
+    const activeBalls = balls.filter((b) => {
+      const name = String(b?.name || "").trim();
+      const level = toInt(b?.level, 0);
+      return name && level > 0;
+    });
+    const hasTwoBalls = activeBalls.length >= 2;
+    const baseStrokeWidth = 7.5;
+    const strokeWidth = hasTwoBalls ? baseStrokeWidth / 2 : baseStrokeWidth;
+    const normalX = -Math.sin(angleRad);
+    const normalY = Math.cos(angleRad);
+    const parallelOffset = hasTwoBalls ? strokeWidth / 2 : 0;
+    let drawnActiveCount = 0;
+
+    balls.forEach((state, ballIndex) => {
+      const name = String(state?.name || "").trim();
+      const level = toInt(state?.level, 0);
+      if (name && level > 0) {
+        const sideOffset = hasTwoBalls ? (drawnActiveCount === 0 ? -parallelOffset : parallelOffset) : 0;
+        drawnActiveCount += 1;
+
+        const x1 = centerX + Math.cos(angleRad) * meterRadius + normalX * sideOffset;
+        const y1 = centerY + Math.sin(angleRad) * meterRadius + normalY * sideOffset;
+        const meterX = centerX + Math.cos(angleRad) * (meterRadius + (meterHeight * level) / 7) + normalX * sideOffset;
+        const meterY = centerY + Math.sin(angleRad) * (meterRadius + (meterHeight * level) / 7) + normalY * sideOffset;
+
+        const color = family_colors[ballIndex] || "#999";
+        svgHtml += `<line x1="${x1}" y1="${y1}" x2="${meterX}" y2="${meterY}" stroke="${color}" stroke-width="${strokeWidth}" stroke-linecap="butt" />`;
+      }
+    });
+
+    const hasBalls = activeBalls.length > 0;
+    if (hasBalls) {
+      const ballNames = activeBalls
+        .map((b) => String(b?.name || "").trim())
+        .filter(Boolean)
+        .join("/");
+      const labelDist = meterRadius + meterHeight + 8;
+      const labelX = centerX + Math.cos(angleRad) * labelDist;
+      const labelY = centerY + Math.sin(angleRad) * labelDist;
+      svgHtml += `<text x="${labelX}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" class="breaking-ball-meter-label" font-size="8" fill="#658299" font-weight="700">${escapeHtml(ballNames)}</text>`;
+    }
+  });
+
+  svgHtml += `</svg>`;
+  return svgHtml;
+}
+
+function renderBreakingBallEditorGrid(form) {
+  const editor = form.querySelector("#breakingBallEditor");
+  const grid = form.querySelector("#breakingBallGrid");
+  const meter = form.querySelector("#breakingBallMeter");
+  if (!editor || !grid) return;
+
+  const hidden = form.querySelector('textarea[name="p_breakingBalls"]');
+  const parsed = parseBreakingBalls(String(hidden?.value || ""));
+  const throwHand = extractThrowingHand(form.querySelector('input[name="hand"]')?.value);
+  const { stateByFamily, extras } = buildBreakingBallState(parsed);
+
+  grid.classList.toggle("lefty", throwHand === "left");
+  grid.innerHTML = buildBreakingBallGrid(stateByFamily, throwHand);
+
+  if (meter) {
+    meter.innerHTML = buildBreakingBallMeterSvg(stateByFamily);
+  }
+
+  const extraInput = editor.querySelector('input[name="p_breakingBallsExtra"]');
+  if (extraInput) {
+    extraInput.value = JSON.stringify(extras);
+  }
+
+  syncBreakingBallsFromEditor(form);
+}
+
 function normalizePlayer(player) {
   player.number = toInt(player.number, 0);
   player.age = toInt(player.age, 18);
@@ -1325,7 +1639,12 @@ function parseBreakingBalls(text) {
     .filter(Boolean)
     .map((line) => {
       const [name, levelText] = line.split(":").map((s) => s.trim());
-      return { name: name || "変化球", level: toInt(levelText, 1) };
+      const familyId = getBreakingBallFamily(name || "");
+      const family = familyId ? BREAKING_BALL_FAMILY_MAP.get(familyId) : null;
+      return {
+        name: name || "変化球",
+        level: family?.hasLevel === false ? 0 : clamp(toInt(levelText, 1), 1, 7)
+      };
     });
 }
 
@@ -1604,6 +1923,13 @@ function bindRealtimeFormUpdates(form) {
     input.addEventListener("input", () => updateHeroPresentation(form));
     input.addEventListener("change", () => updateHeroPresentation(form));
   });
+
+  const handInput = form.querySelector('input[name="hand"]');
+  if (handInput) {
+    const refresh = () => renderBreakingBallEditorGrid(form);
+    handInput.addEventListener("input", refresh);
+    handInput.addEventListener("change", refresh);
+  }
 
   const typeSelect = form.querySelector('select[name="type"]');
   if (typeSelect) {
@@ -1933,9 +2259,22 @@ function buildPlayerForm(player) {
                 ${statField("スタミナ", "p_stamina", pitcher.stamina, 1, 100)}
               </div>
               <div class="breakball-editor">
-                <label>変化球（1行1件 例: フォーク:5）</label>
-                <textarea name="p_breakingBalls">${pitcher.breakingBalls
-                  .map((b) => `${escapeHtml(b.name)}:${toInt(b.level, 1)}`)
+                <label>変化球（マウス操作）</label>
+                <div id="breakingBallEditor" class="breaking-ball-editor-ui">
+                  <div id="breakingBallGrid" class="breaking-ball-grid"></div>
+                  <input type="hidden" name="p_breakingBallsExtra" value="[]" />
+                </div>
+                <div id="breakingBallMeterWrap" class="breaking-ball-meter-wrap">
+                  <label>変化球の力関係</label>
+                  <div id="breakingBallMeter" class="breaking-ball-meter"></div>
+                </div>
+                <textarea class="hidden-data-input" name="p_breakingBalls">${pitcher.breakingBalls
+                  .map((b) => {
+                    const familyId = getBreakingBallFamily(b.name);
+                    const family = familyId ? BREAKING_BALL_FAMILY_MAP.get(familyId) : null;
+                    const level = family?.hasLevel === false ? 0 : clamp(toInt(b.level, 1), 1, 7);
+                    return level > 0 ? `${escapeHtml(b.name)}:${level}` : `${escapeHtml(b.name)}`;
+                  })
                   .join("\n")}</textarea>
               </div>
             </article>
@@ -2293,6 +2632,17 @@ function bindPresetHandlers(form) {
     });
   });
 
+  const breakingBallEditor = form.querySelector("#breakingBallEditor");
+  if (breakingBallEditor) {
+    renderBreakingBallEditorGrid(form);
+
+    breakingBallEditor.addEventListener("change", (event) => {
+      if (!(event.target instanceof HTMLSelectElement)) return;
+      syncBreakingBallsFromEditor(form);
+      updatePlayerDraftFromForm(form);
+    });
+  }
+
   const syncDraft = () => updatePlayerDraftFromForm(form);
   form.addEventListener("input", syncDraft);
   form.addEventListener("change", syncDraft);
@@ -2504,6 +2854,7 @@ function renderDetailWorkspace(playerId) {
   if (draft) {
     applyFormSnapshot(form, draft);
   }
+  renderBreakingBallEditorGrid(form);
   bindDetailSubTabs(form);
   bindPresetHandlers(form);
   bindRealtimeFormUpdates(form);
