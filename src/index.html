@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>パワプロ チームマネージャ</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>パワプロ チームデータ管理</h1>
+          <p>JSONベースのチーム編集ツール</p>
+        </div>
+        <div class="actions">
+          <button id="saveAllBtn" class="primary">全体を保存</button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="panel workbook-panel">
+          <div id="workspaceTabs" class="workspace-tabs"></div>
+          <div id="workspaceContent" class="workspace-content"></div>
+        </section>
+      </main>
+
+      <footer id="statusBar" class="status-bar">準備完了</footer>
+    </div>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

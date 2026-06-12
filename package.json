@@ -1,0 +1,19 @@
+{
+  "name": "pawapuro_team_manager",
+  "version": "1.0.0",
+  "description": "PowerPro team data manager with tabbed player editor",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "test": "echo \"No tests configured\""
+  },
+  "keywords": [
+    
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^42.4.0"
+  }
+}

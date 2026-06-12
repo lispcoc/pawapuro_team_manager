@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "updatedAt": "2026-06-12",
+  "teams": [
+    {
+      "id": "TIGERS",
+      "name": "阪神タイガース",
+      "league": "セ・リーグ",
+      "players": [
+        {
+          "id": "t_41",
+          "name": "村上",
+          "number": 41,
+          "age": 27,
+          "type": "投手",
+          "position": "先発/中継ぎ",
+          "hand": "右投左打",
+          "hitter": { "trajectory": 1, "contact": 15, "power": 20, "speed": 40, "arm": 62, "fielding": 50, "catching": 48 },
+          "pitcher": {
+            "velocity": 151,
+            "control": 80,
+            "stamina": 74,
+            "breakingBalls": [
+              { "name": "フォーク", "level": 5 },
+              { "name": "カットボール", "level": 3 },
+              { "name": "スローカーブ", "level": 2 }
+            ]
+          },
+          "traits": [ "回復B", "打たれ強さC", "要所○", "低め○" ],
+          "strategy": [ "調子次第", "調子安定" ]
+        },
+        {
+          "id": "t_3",
+          "name": "大山",
+          "number": 3,
+          "age": 31,
+          "type": "野手",
+          "position": "一塁/三塁",
+          "hand": "右投右打",
+          "hitter": { "trajectory": 3, "contact": 53, "power": 69, "speed": 58, "arm": 73, "fielding": 57, "catching": 72 },
+          "pitcher": { "velocity": 120, "control": 1, "stamina": 1, "breakingBalls": [  ] },
+          "traits": [ "チャンスB", "走塁C", "対左投手E", "流し打ち" ],
+          "strategy": [ "選球眼", "慎重打法", "積極走塁" ]
+        },
+        {
+          "id": "t_5",
+          "name": "近本",
+          "number": 5,
+          "age": 32,
+          "type": "野手",
+          "position": "外野",
+          "hand": "左投左打",
+          "hitter": { "trajectory": 2, "contact": 65, "power": 58, "speed": 86, "arm": 41, "fielding": 89, "catching": 74 },
+          "pitcher": { "velocity": 120, "control": 1, "stamina": 1, "breakingBalls": [  ] },
+          "traits": [ "走塁B", "送球C", "盗塁C", "固め打ち" ],
+          "strategy": [ "選球眼", "慎重打法" ]
+        }
+      ]
+    },
+    {
+      "id": "GIANTS",
+      "name": "読売ジャイアンツ",
+      "league": "セ・リーグ",
+      "players": [
+        {
+          "id": "g_18",
+          "name": "山崎",
+          "number": 18,
+          "age": 26,
+          "type": "投手",
+          "position": "先発",
+          "hand": "右投右打",
+          "hitter": { "trajectory": 1, "contact": 14, "power": 23, "speed": 41, "arm": 58, "fielding": 52, "catching": 50 },
+          "pitcher": {
+            "velocity": 154,
+            "control": 76,
+            "stamina": 79,
+            "breakingBalls": [ { "name": "スライダー", "level": 4 }, { "name": "フォーク", "level": 5 } ]
+          },
+          "traits": [ "ノビB", "対ピンチC", "奪三振" ],
+          "strategy": [ "調子次第" ]
+        }
+      ]
+    }
+  ]
+}
