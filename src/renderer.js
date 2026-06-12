@@ -17,6 +17,7 @@ const POSITION_OPTION_MAP = new Map(POSITION_OPTIONS.map((option) => [option.key
 const RANK_LETTERS = ["A", "B", "C", "D", "E", "F", "G"];
 const POSITIVE_RANK_LETTERS = new Set(["A", "B", "C"]);
 const NEGATIVE_RANK_LETTERS = new Set(["E", "F", "G"]);
+const LINKED_RANKED_TRAIT_BASES = ["回復", "ケガしにくさ"];
 
 const RANKED_TRAIT_BASES = [
   "チャンス",
@@ -2015,6 +2016,38 @@ function syncTraitsFromPanel(form, mode) {
 
   const traits = composeTraitsFromState(ranked, toggles, unknown, config.rankedBases, config.toggleTraits);
   traitsArea.value = traits.join(",");
+
+  const linkedBases = LINKED_RANKED_TRAIT_BASES.filter((base) => config.knownRankedSet.has(base));
+  if (linkedBases.length > 0) {
+    const otherMode = mode === "pitcher" ? "hitter" : "pitcher";
+    const otherConfig = getTraitEditorConfig(otherMode);
+    const otherTraitsArea = form.querySelector(`textarea[name="traits_${otherMode}"]`);
+
+    if (otherTraitsArea) {
+      const parsedOther = parseTraitState(splitCsv(otherTraitsArea.value), otherConfig.rankedBases, otherConfig.toggleTraits);
+
+      linkedBases.forEach((base) => {
+        if (!otherConfig.knownRankedSet.has(base)) return;
+        const linkedRank = ranked[base];
+        if (RANK_LETTERS.includes(linkedRank)) {
+          parsedOther.ranked[base] = linkedRank;
+        }
+      });
+
+      const syncedOtherTraits = composeTraitsFromState(
+        parsedOther.ranked,
+        parsedOther.toggles,
+        parsedOther.unknown,
+        otherConfig.rankedBases,
+        otherConfig.toggleTraits
+      );
+      otherTraitsArea.value = syncedOtherTraits.join(",");
+      applyTraitsToPanel(form, syncedOtherTraits, otherMode);
+      refreshChipPreview(form, `traits_${otherMode}`, `.traits-preview-${otherMode}`, `trait:${otherMode}`);
+    }
+  }
+
+  applyTraitsToPanel(form, traits, mode);
   refreshChipPreview(form, `traits_${mode}`, `.traits-preview-${mode}`, `trait:${mode}`);
   updatePlayerDraftFromForm(form);
 }
@@ -2180,7 +2213,12 @@ function bindPresetHandlers(form) {
     applyTraitsToPanel(form, splitCsv(traitsArea.value), mode);
 
     openTraitPanel.addEventListener("click", () => {
-      traitPanel.hidden = false;
+      if (traitPanel.hidden) {
+        traitPanel.hidden = false;
+      } else {
+        syncTraitsFromPanel(form, mode);
+        traitPanel.hidden = true;
+      }
     });
 
     closeTraitPanel.addEventListener("click", () => {
