@@ -6,14 +6,30 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "test": "echo \"No tests configured\""
+    "test": "echo \"No tests configured\"",
+    "build": "electron-builder --win --x64"
   },
-  "keywords": [
-    
-  ],
+  "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^42.4.0"
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.electron.yourapp",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "src",
+      "package.json",
+      "package-lock.json"
+    ],
+    "nsis":{
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

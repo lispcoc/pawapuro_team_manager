@@ -2893,31 +2893,57 @@ function renderWorkspaceContent() {
 
 async function saveAll() {
   try {
-    await window.teamApi.save(state.data);
-    setStatus("JSONへ保存しました。");
+    const result = await window.teamApi.save(state.data);
+    const fileLabel = result?.dataPath ? ` (${result.dataPath})` : "";
+    setStatus(`JSONへ保存しました。${fileLabel}`);
   } catch (error) {
     setStatus(`保存に失敗: ${error.message}`);
   }
 }
 
+function applyLoadedData(data, statusMessage) {
+  state.data = data;
+  for (const team of state.data.teams) {
+    for (const player of team.players) {
+      normalizePlayer(player);
+    }
+  }
+
+  const selectedTeamExists = state.data.teams.some((team) => team.id === state.selectedTeamId);
+  state.selectedTeamId = selectedTeamExists ? state.selectedTeamId : state.data.teams[0]?.id || null;
+  state.openTabs = [];
+  state.playerDrafts = {};
+  state.dirtyPlayerTabs.clear();
+  state.activeWorkspaceTab = ROSTER_TAB_ID;
+
+  renderWorkspaceTabs();
+  renderWorkspaceContent();
+  setStatus(statusMessage);
+}
+
 async function bootstrap() {
   try {
-    state.data = await window.teamApi.load();
-    for (const team of state.data.teams) {
-      for (const player of team.players) {
-        normalizePlayer(player);
-      }
-    }
-
-    state.selectedTeamId = state.data.teams[0]?.id || null;
-    renderWorkspaceTabs();
-    renderWorkspaceContent();
-    setStatus("データを読み込みました。");
+    const data = await window.teamApi.load();
+    applyLoadedData(data, "データを読み込みました。");
   } catch (error) {
     setStatus(`読み込み失敗: ${error.message}`);
   }
 }
 
 els.saveAllBtn.addEventListener("click", saveAll);
+
+window.teamApi.onMenuSaveRequest(() => {
+  void saveAll();
+});
+
+window.teamApi.onDataLoaded((payload) => {
+  if (!payload?.data || !Array.isArray(payload.data.teams)) {
+    setStatus("読み込み失敗: 不正なデータ形式です。");
+    return;
+  }
+
+  const pathLabel = payload.dataPath ? ` ${payload.dataPath}` : "";
+  applyLoadedData(payload.data, `ファイルを読み込みました。${pathLabel}`);
+});
 
 bootstrap();
