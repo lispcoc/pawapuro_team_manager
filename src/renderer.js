@@ -1570,7 +1570,24 @@ function buildBreakingBallMeterSvg(stateByFamily) {
         const meterY = centerY + Math.sin(angleRad) * (meterRadius + (meterHeight * level) / 7) + normalY * sideOffset;
 
         const color = family_colors[ballIndex] || "#999";
+        const outlineWidth = strokeWidth + 1;
+
+        svgHtml += `<line x1="${x1}" y1="${y1}" x2="${meterX}" y2="${meterY}" stroke="#111" stroke-width="${outlineWidth}" stroke-linecap="butt" />`;
         svgHtml += `<line x1="${x1}" y1="${y1}" x2="${meterX}" y2="${meterY}" stroke="${color}" stroke-width="${strokeWidth}" stroke-linecap="butt" />`;
+
+        {
+          const dividerHalfLen = outlineWidth / 2;
+          for (let mark = 0; mark <= level; mark += 1) {
+            const markDistance = meterRadius + (meterHeight * mark) / 7;
+            const markX = centerX + Math.cos(angleRad) * markDistance + normalX * sideOffset;
+            const markY = centerY + Math.sin(angleRad) * markDistance + normalY * sideOffset;
+            const markX1 = markX - normalX * dividerHalfLen;
+            const markY1 = markY - normalY * dividerHalfLen;
+            const markX2 = markX + normalX * dividerHalfLen;
+            const markY2 = markY + normalY * dividerHalfLen;
+            svgHtml += `<line x1="${markX1}" y1="${markY1}" x2="${markX2}" y2="${markY2}" stroke="#111" stroke-width="1" stroke-linecap="butt" />`;
+          }
+        }
       }
     });
 
@@ -1928,6 +1945,49 @@ function updateHeroPresentation(form) {
   }
 }
 
+function bindStatBarDrag(form) {
+  form.querySelectorAll(".stat-row .meter").forEach((meter) => {
+    const row = meter.closest(".stat-row");
+    if (!row) return;
+    const input = row.querySelector('input[type="number"]');
+    if (!input) return;
+
+    let dragging = false;
+
+    function applyPointer(e) {
+      const rect = meter.getBoundingClientRect();
+      const clientX = e.clientX;
+      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      const min = toInt(input.min, 0);
+      const max = toInt(input.max, 100);
+      const newValue = Math.round(min + ratio * (max - min));
+      input.value = newValue;
+      updateStatPresentation(input);
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    meter.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      dragging = true;
+      meter.classList.add("dragging");
+      document.body.classList.add("stat-dragging");
+      applyPointer(e);
+    });
+
+    const onMove = (e) => { if (dragging) applyPointer(e); };
+    const onUp = () => {
+      if (dragging) {
+        dragging = false;
+        meter.classList.remove("dragging");
+        document.body.classList.remove("stat-dragging");
+      }
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  });
+}
+
 function bindRealtimeFormUpdates(form) {
   const statInputs = form.querySelectorAll('.stat-row input[type="number"]');
   statInputs.forEach((input) => {
@@ -1935,6 +1995,8 @@ function bindRealtimeFormUpdates(form) {
     input.addEventListener("input", refresh);
     input.addEventListener("change", refresh);
   });
+
+  bindStatBarDrag(form);
 
   const trajectoryInput = form.querySelector('input[name="h_trajectory"]');
   if (trajectoryInput) {
@@ -2336,14 +2398,14 @@ function buildPlayerForm(player) {
                 ${statField("スタミナ", "p_stamina", pitcher.stamina, 1, 100)}
               </div>
               <div class="breakball-editor">
-                <label>変化球（マウス操作）</label>
+                <div id="breakingBallMeterWrap" class="breaking-ball-meter-wrap">
+                  <label>変化球</label>
+                  <div id="breakingBallMeter" class="breaking-ball-meter"></div>
+                </div>
+                <label>変化球</label>
                 <div id="breakingBallEditor" class="breaking-ball-editor-ui">
                   <div id="breakingBallGrid" class="breaking-ball-grid"></div>
                   <input type="hidden" name="p_breakingBallsExtra" value="[]" />
-                </div>
-                <div id="breakingBallMeterWrap" class="breaking-ball-meter-wrap">
-                  <label>変化球の力関係</label>
-                  <div id="breakingBallMeter" class="breaking-ball-meter"></div>
                 </div>
                 <textarea class="hidden-data-input" name="p_breakingBalls">${pitcher.breakingBalls
                   .map((b) => {
