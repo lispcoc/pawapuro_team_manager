@@ -147,6 +147,64 @@ function createWindow() {
   Menu.setApplicationMenu(buildApplicationMenu());
   updateWindowTitle(mainWindow);
   mainWindow.loadFile(path.join(__dirname, "src", "index.html"));
+
+  mainWindow.on("close", async (event) => {
+    if (mainWindow.isDestroyed()) {
+      return;
+    }
+
+    event.preventDefault();
+
+    let hasUnsaved = false;
+    try {
+      hasUnsaved = await new Promise((resolve) => {
+        let responded = false;
+        const timeout = setTimeout(() => {
+          if (!responded) {
+            responded = true;
+            resolve(false);
+          }
+        }, 1000);
+
+        const handleResponse = (_event, result) => {
+          if (responded) return;
+          responded = true;
+          clearTimeout(timeout);
+          ipcMain.removeListener("renderer-unsaved-data-response", handleResponse);
+          resolve(result);
+        };
+
+        ipcMain.once("renderer-unsaved-data-response", handleResponse);
+        mainWindow.webContents.send("request-check-unsaved-data");
+      });
+    } catch (error) {
+      console.error("Failed to check unsaved data:", error);
+    }
+
+    if (!hasUnsaved) {
+      mainWindow.destroy();
+      return;
+    }
+
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      buttons: ["保存して終了", "保存しないで終了", "キャンセル"],
+      defaultId: 0,
+      cancelId: 2,
+      title: "未保存の変更があります",
+      message: "現在の変更を保存しますか？",
+      detail: "このアプリケーションを終了する前に、現在の編集内容を保存できます。"
+    });
+
+    if (result.response === 0) {
+      // 保存して終了
+      mainWindow.webContents.send("app:save-and-close");
+    } else if (result.response === 1) {
+      // 保存しないで終了
+      mainWindow.destroy();
+    }
+    // response === 2 の場合はキャンセル
+  });
 }
 
 ipcMain.handle("teams:load", async (event) => {
@@ -198,6 +256,13 @@ ipcMain.handle("teams:confirm-save-before-open", async (event) => {
   if (result.response === 0) return "save";
   if (result.response === 1) return "discard";
   return "cancel";
+});
+
+ipcMain.on("close-app", () => {
+  const mainWindow = BrowserWindow.getFocusedWindow();
+  if (mainWindow) {
+    mainWindow.destroy();
+  }
 });
 
 app.whenReady().then(() => {

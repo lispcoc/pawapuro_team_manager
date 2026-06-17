@@ -1679,7 +1679,9 @@ function renderWorkspaceTabs() {
     btn.type = "button";
     btn.className = `workspace-tab-btn ${state.activeWorkspaceTab === id ? "active" : ""}`;
     btn.title = label;
-    btn.innerHTML = `<span class="workspace-tab-title">${escapeHtml(label)}</span>`;
+    const isDirty = closable && isPlayerTabDirty(id);
+    const displayLabel = isDirty ? `${label} (*)` : label;
+    btn.innerHTML = `<span class="workspace-tab-title">${escapeHtml(displayLabel)}</span>`;
     btn.addEventListener("click", () => {
       state.activeWorkspaceTab = id;
       renderWorkspaceTabs();
@@ -1973,6 +1975,7 @@ function closePlayerTab(playerId) {
   renderWorkspaceContent();
 }
 
+
 function requestClosePlayerTab(playerId) {
   if (!isPlayerTabDirty(playerId)) {
     closePlayerTab(playerId);
@@ -1981,10 +1984,60 @@ function requestClosePlayerTab(playerId) {
 
   const target = findPlayer(playerId);
   const playerName = target?.player?.name || "この選手";
-  const confirmed = window.confirm(`${playerName} に未保存の編集があります。保存せずにタブを閉じますか？`);
-  if (!confirmed) return;
+  
+  showCloseUnsavedPlayerDialog(playerName, playerId);
+}
 
-  closePlayerTab(playerId);
+function showCloseUnsavedPlayerDialog(playerName, playerId) {
+  const dialog = document.createElement("div");
+  dialog.className = "confirm-dialog-overlay";
+  dialog.innerHTML = `
+    <div class="confirm-dialog">
+      <div class="confirm-dialog-content">
+        <p>${escapeHtml(playerName)} に未保存の編集があります。どうしますか？</p>
+      </div>
+      <div class="confirm-dialog-actions">
+        <button class="dialog-btn dialog-btn-primary" data-action="save">保存して閉じる</button>
+        <button class="dialog-btn" data-action="close">保存せずに閉じる</button>
+        <button class="dialog-btn dialog-btn-cancel" data-action="cancel">キャンセル</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(dialog);
+  
+  const handleAction = (action) => {
+    if (document.body.contains(dialog)) {
+      document.body.removeChild(dialog);
+    }
+    
+    if (action === "save") {
+      const form = document.getElementById("playerForm");
+      if (form) {
+        const originalCloseTab = closePlayerTab;
+        window.closePlayerTabAfterSave = () => {
+          originalCloseTab(playerId);
+          delete window.closePlayerTabAfterSave;
+        };
+        form.dispatchEvent(new Event("submit"));
+      }
+    } else if (action === "close") {
+      closePlayerTab(playerId);
+    }
+  };
+  
+  const buttons = dialog.querySelectorAll(".confirm-dialog-actions button");
+  buttons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      handleAction(btn.dataset.action);
+    });
+  });
+  
+  dialog.addEventListener("click", (e) => {
+    if (e.target === dialog) {
+      handleAction("cancel");
+    }
+  });
 }
 
 function sanitizeIdSeed(text, fallback) {
@@ -2319,10 +2372,6 @@ function buildPlayerForm(player) {
             </article>
           </div>
         </section>
-      </div>
-
-      <div class="section-actions">
-        <button class="primary" type="submit">この選手を保存</button>
       </div>
     </form>
   `;
@@ -2709,6 +2758,10 @@ function savePlayerForm(form) {
   renderWorkspaceTabs();
   renderWorkspaceContent();
   setStatus(`${player.name} を更新しました。全体を保存してください。`);
+  
+  if (window.closePlayerTabAfterSave) {
+    window.closePlayerTabAfterSave();
+  }
 }
 
 function renderRosterWorkspace() {
@@ -2856,11 +2909,19 @@ function renderDetailWorkspace(playerId) {
     <section class="panel detail-workspace">
       <div class="panel-header">
         <h2>${escapeHtml(target.player.name)} 詳細</h2>
-        <button type="button" id="deletePlayerInDetailBtn" class="danger-btn">この選手を削除</button>
+        <div class="header-actions">
+          <button type="button" id="savePlayerInDetailBtn" class="primary">この選手を保存</button>
+          <button type="button" id="deletePlayerInDetailBtn" class="danger-btn">この選手を削除</button>
+        </div>
       </div>
       <div class="detail-content">${buildPlayerForm(target.player)}</div>
     </section>
   `;
+
+  document.getElementById("savePlayerInDetailBtn")?.addEventListener("click", () => {
+    const form = document.getElementById("playerForm");
+    if (form) form.dispatchEvent(new Event("submit"));
+  });
 
   document.getElementById("deletePlayerInDetailBtn")?.addEventListener("click", () => {
     deletePlayerById(playerId);
@@ -3002,6 +3063,21 @@ window.teamApi.onMenuSaveAsRequest(() => {
 
 window.teamApi.onMenuOpenRequest(() => {
   void openDataFileFromMenu();
+});
+
+window.teamApi.onRequestCheckUnsavedData(async () => {
+  return hasUnsavedChanges();
+});
+
+window.teamApi.onAppSaveAndClose(async () => {
+  const result = await saveAll();
+  if (!result.ok || result.canceled) {
+    return;
+  }
+  
+  setTimeout(() => {
+    window.teamApi.notifyCloseApp();
+  }, 200);
 });
 
 window.teamApi.onDataLoaded((payload) => {
