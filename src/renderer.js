@@ -872,12 +872,19 @@ function updatePlayerDraftFromForm(form) {
   const draft = buildFormSnapshot(form);
   const hasChanges = stringifyComparable(base) !== stringifyComparable(draft);
 
+  const wasDirty = state.dirtyPlayerTabs.has(playerId);
+
   if (hasChanges) {
     state.playerDrafts[playerId] = draft;
     state.dirtyPlayerTabs.add(playerId);
   } else {
     delete state.playerDrafts[playerId];
     state.dirtyPlayerTabs.delete(playerId);
+  }
+
+  const isDirty = state.dirtyPlayerTabs.has(playerId);
+  if (wasDirty !== isDirty) {
+    renderWorkspaceTabs();
   }
 }
 
@@ -897,7 +904,7 @@ function gradeByValue(value) {
   if (value >= 60) return "C";
   if (value >= 50) return "D";
   if (value >= 40) return "E";
-  if (value >= 1) return "F";
+  if (value >= 20) return "F";
   return "G";
 }
 
