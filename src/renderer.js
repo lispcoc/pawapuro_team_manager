@@ -441,6 +441,7 @@ const BREAKING_BALL_LAYOUT_LEFT = [
 
 const state = {
   data: null,
+  lastSavedSnapshot: "",
   selectedTeamId: null,
   openTabs: [],
   playerDrafts: {},
@@ -467,6 +468,22 @@ const els = {
 
 function setStatus(message) {
   els.statusBar.textContent = message;
+}
+
+function serializeDataSnapshot(data) {
+  return JSON.stringify(data ?? null);
+}
+
+function hasUnsavedChanges() {
+  if (!state.data) {
+    return false;
+  }
+
+  if (state.dirtyPlayerTabs.size > 0) {
+    return true;
+  }
+
+  return serializeDataSnapshot(state.data) !== state.lastSavedSnapshot;
 }
 
 function getCurrentTeam() {
@@ -2891,13 +2908,55 @@ function renderWorkspaceContent() {
   renderDetailWorkspace(state.activeWorkspaceTab);
 }
 
-async function saveAll() {
+async function saveAll(options = {}) {
+  const { saveAs = false, silentOnCancel = false } = options;
+
   try {
-    const result = await window.teamApi.save(state.data);
+    const result = await window.teamApi.save(state.data, { saveAs });
+    if (!result?.ok) {
+      if (!silentOnCancel) {
+        setStatus("保存をキャンセルしました。");
+      }
+      return false;
+    }
+
+    state.lastSavedSnapshot = serializeDataSnapshot(state.data);
     const fileLabel = result?.dataPath ? ` (${result.dataPath})` : "";
     setStatus(`JSONへ保存しました。${fileLabel}`);
+    return true;
   } catch (error) {
     setStatus(`保存に失敗: ${error.message}`);
+    return false;
+  }
+}
+
+async function openDataFileFromMenu() {
+  if (hasUnsavedChanges()) {
+    const decision = await window.teamApi.confirmSaveBeforeOpen();
+    if (decision === "cancel") {
+      setStatus("ファイルを開く操作をキャンセルしました。");
+      return;
+    }
+
+    if (decision === "save") {
+      const saved = await saveAll({ saveAs: false, silentOnCancel: true });
+      if (!saved) {
+        setStatus("保存が完了しなかったため、ファイルを開く操作を中止しました。");
+        return;
+      }
+    }
+  }
+
+  try {
+    const result = await window.teamApi.openFile();
+    if (!result?.ok) {
+      return;
+    }
+
+    const pathLabel = result.dataPath ? ` ${result.dataPath}` : "";
+    applyLoadedData(result.data, `ファイルを読み込みました。${pathLabel}`);
+  } catch (error) {
+    setStatus(`読み込み失敗: ${error.message}`);
   }
 }
 
@@ -2915,6 +2974,7 @@ function applyLoadedData(data, statusMessage) {
   state.playerDrafts = {};
   state.dirtyPlayerTabs.clear();
   state.activeWorkspaceTab = ROSTER_TAB_ID;
+  state.lastSavedSnapshot = serializeDataSnapshot(state.data);
 
   renderWorkspaceTabs();
   renderWorkspaceContent();
@@ -2924,7 +2984,7 @@ function applyLoadedData(data, statusMessage) {
 async function bootstrap() {
   try {
     const data = await window.teamApi.load();
-    applyLoadedData(data, "データを読み込みました。");
+    applyLoadedData(data, "新規チームデータを作成しました。");
   } catch (error) {
     setStatus(`読み込み失敗: ${error.message}`);
   }
@@ -2933,7 +2993,15 @@ async function bootstrap() {
 els.saveAllBtn.addEventListener("click", saveAll);
 
 window.teamApi.onMenuSaveRequest(() => {
-  void saveAll();
+  void saveAll({ saveAs: false });
+});
+
+window.teamApi.onMenuSaveAsRequest(() => {
+  void saveAll({ saveAs: true });
+});
+
+window.teamApi.onMenuOpenRequest(() => {
+  void openDataFileFromMenu();
 });
 
 window.teamApi.onDataLoaded((payload) => {

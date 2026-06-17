@@ -2,12 +2,19 @@ const { app, BrowserWindow, ipcMain, Menu, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs/promises");
 
-const DATA_FILE_NAME = "teams.json";
-const DEFAULT_DATA_PATH = path.join(__dirname, "data", "teams.default.json");
 const DATA_FILE_FILTERS = [{ name: "JSON", extensions: ["json"] }];
 const APP_TITLE = "パワプロ チームマネージャ";
 
 let currentDataPath = null;
+
+function createEmptyTeamData() {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    version: 1,
+    updatedAt: today,
+    teams: []
+  };
+}
 
 function formatWindowTitle(dataPath) {
   if (!dataPath) {
@@ -23,39 +30,51 @@ function updateWindowTitle(browserWindow) {
   browserWindow.setTitle(formatWindowTitle(currentDataPath));
 }
 
-async function ensureDataFile() {
-  const dataDir = app.getPath("userData");
-  const dataPath = path.join(dataDir, DATA_FILE_NAME);
-
-  try {
-    await fs.access(dataPath);
-  } catch {
-    await fs.mkdir(dataDir, { recursive: true });
-    const defaultContent = await fs.readFile(DEFAULT_DATA_PATH, "utf-8");
-    await fs.writeFile(dataPath, defaultContent, "utf-8");
+async function loadData(filePath = null) {
+  const dataPath = filePath || currentDataPath;
+  if (!dataPath) {
+    return createEmptyTeamData();
   }
 
-  return dataPath;
-}
-
-async function loadData(filePath = null) {
-  const dataPath = filePath || currentDataPath || (await ensureDataFile());
   const text = await fs.readFile(dataPath, "utf-8");
   const parsed = JSON.parse(text);
   currentDataPath = dataPath;
   return parsed;
 }
 
-async function saveData(payload, filePath = null) {
+async function promptSaveDataFile(browserWindow) {
+  const result = await dialog.showSaveDialog(browserWindow, {
+    title: "チームデータを保存",
+    filters: DATA_FILE_FILTERS,
+    defaultPath: currentDataPath || app.getPath("documents")
+  });
+
+  if (result.canceled || !result.filePath) {
+    return null;
+  }
+
+  return result.filePath;
+}
+
+async function saveData(payload, options = {}) {
   if (!payload || !Array.isArray(payload.teams)) {
     throw new Error("Invalid data format. Expected root object with teams array.");
   }
 
-  const dataPath = filePath || currentDataPath || (await ensureDataFile());
+  const { filePath = null, saveAs = false, browserWindow = null } = options;
+  let dataPath = filePath || currentDataPath;
+
+  if (saveAs || !dataPath) {
+    dataPath = await promptSaveDataFile(browserWindow);
+    if (!dataPath) {
+      return { canceled: true, dataPath: currentDataPath };
+    }
+  }
+
   const serialized = JSON.stringify(payload, null, 2);
   await fs.writeFile(dataPath, serialized, "utf-8");
   currentDataPath = dataPath;
-  return dataPath;
+  return { canceled: false, dataPath };
 }
 
 async function promptOpenDataFile(browserWindow) {
@@ -73,26 +92,6 @@ async function promptOpenDataFile(browserWindow) {
   return result.filePaths[0];
 }
 
-async function promptInitialDataFile() {
-  const selectedPath = await promptOpenDataFile(null);
-  if (selectedPath) {
-    currentDataPath = selectedPath;
-  }
-}
-
-async function openDataFileFromMenu(browserWindow) {
-  const selectedPath = await promptOpenDataFile(browserWindow);
-  if (!selectedPath) return;
-
-  try {
-    const data = await loadData(selectedPath);
-    updateWindowTitle(browserWindow);
-    browserWindow.webContents.send("teams:data-loaded", { data, dataPath: selectedPath });
-  } catch (error) {
-    dialog.showErrorBox("ファイルを開けません", error.message);
-  }
-}
-
 function buildApplicationMenu() {
   const template = [
     {
@@ -103,15 +102,23 @@ function buildApplicationMenu() {
           accelerator: "CmdOrCtrl+O",
           click: (_menuItem, browserWindow) => {
             if (!browserWindow) return;
-            void openDataFileFromMenu(browserWindow);
+            browserWindow.webContents.send("menu:file-open-request");
           }
         },
         {
-          label: "保存",
+          label: "上書き保存",
           accelerator: "CmdOrCtrl+S",
           click: (_menuItem, browserWindow) => {
             if (!browserWindow) return;
             browserWindow.webContents.send("menu:file-save-request");
+          }
+        },
+        {
+          label: "名前を付けて保存...",
+          accelerator: "CmdOrCtrl+Shift+S",
+          click: (_menuItem, browserWindow) => {
+            if (!browserWindow) return;
+            browserWindow.webContents.send("menu:file-save-as-request");
           }
         },
         { type: "separator" },
@@ -149,15 +156,51 @@ ipcMain.handle("teams:load", async (event) => {
   return data;
 });
 
-ipcMain.handle("teams:save", async (event, payload) => {
-  const dataPath = await saveData(payload);
+ipcMain.handle("teams:save", async (event, payload, options = {}) => {
   const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  const result = await saveData(payload, {
+    ...options,
+    browserWindow
+  });
+
+  if (result.canceled) {
+    return { ok: false, canceled: true, dataPath: result.dataPath || null };
+  }
+
   updateWindowTitle(browserWindow);
-  return { ok: true, dataPath };
+  return { ok: true, canceled: false, dataPath: result.dataPath };
 });
 
-app.whenReady().then(async () => {
-  await promptInitialDataFile();
+ipcMain.handle("teams:open-file", async (event) => {
+  const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  const selectedPath = await promptOpenDataFile(browserWindow);
+  if (!selectedPath) {
+    return { ok: false, canceled: true };
+  }
+
+  const data = await loadData(selectedPath);
+  updateWindowTitle(browserWindow);
+  return { ok: true, canceled: false, dataPath: selectedPath, data };
+});
+
+ipcMain.handle("teams:confirm-save-before-open", async (event) => {
+  const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  const result = await dialog.showMessageBox(browserWindow, {
+    type: "warning",
+    buttons: ["保存する", "保存しない", "キャンセル"],
+    defaultId: 0,
+    cancelId: 2,
+    title: "未保存の変更があります",
+    message: "現在の変更を保存しますか？",
+    detail: "別のファイルを開く前に、現在の編集内容を保存できます。"
+  });
+
+  if (result.response === 0) return "save";
+  if (result.response === 1) return "discard";
+  return "cancel";
+});
+
+app.whenReady().then(() => {
   createWindow();
 
   app.on("activate", () => {
