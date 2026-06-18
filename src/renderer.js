@@ -439,6 +439,29 @@ const BREAKING_BALL_LAYOUT_LEFT = [
   ["curve", "fork"]
 ];
 
+const APP_SETTINGS_STORAGE_KEY = "pawapuro-team-manager-settings";
+const BREAKING_BALL_DISPLAY_MODES = {
+  STANDARD: "standard",
+  ARROW: "arrow"
+};
+
+const BREAKING_BALL_DIRECTION_LAYOUTS = {
+  right: [
+    { familyId: "slider", angle: 0 },
+    { familyId: "curve", angle: 45 },
+    { familyId: "fork", angle: 90 },
+    { familyId: "sinker", angle: 135 },
+    { familyId: "shoot", angle: 180 }
+  ],
+  left: [
+    { familyId: "shoot", angle: 0 },
+    { familyId: "sinker", angle: 45 },
+    { familyId: "fork", angle: 90 },
+    { familyId: "curve", angle: 135 },
+    { familyId: "slider", angle: 180 }
+  ]
+};
+
 const state = {
   data: null,
   lastSavedSnapshot: "",
@@ -456,7 +479,8 @@ const state = {
   rosterSort: {
     key: "number",
     direction: "asc"
-  }
+  },
+  settings: createDefaultSettings()
 };
 
 const els = {
@@ -534,6 +558,66 @@ function escapeHtml(text) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function createDefaultSettings() {
+  return {
+    breakingBallDisplayMode: BREAKING_BALL_DISPLAY_MODES.STANDARD
+  };
+}
+
+function normalizeAppSettings(settings) {
+  const base = createDefaultSettings();
+  const mode = String(settings?.breakingBallDisplayMode || "").trim();
+  const validModes = new Set(Object.values(BREAKING_BALL_DISPLAY_MODES));
+  return {
+    ...base,
+    ...(settings && typeof settings === "object" ? settings : {}),
+    breakingBallDisplayMode: validModes.has(mode) ? mode : base.breakingBallDisplayMode
+  };
+}
+
+function loadAppSettings() {
+  try {
+    const raw = window.localStorage.getItem(APP_SETTINGS_STORAGE_KEY);
+    if (!raw) {
+      return createDefaultSettings();
+    }
+
+    return normalizeAppSettings(JSON.parse(raw));
+  } catch {
+    return createDefaultSettings();
+  }
+}
+
+function persistAppSettings() {
+  try {
+    window.localStorage.setItem(APP_SETTINGS_STORAGE_KEY, JSON.stringify(state.settings));
+  } catch {
+    // ignore persistence failures
+  }
+}
+
+function applyAppSettings(nextSettings, options = {}) {
+  const { rerender = true, statusMessage = "" } = options;
+  state.settings = normalizeAppSettings(nextSettings);
+  persistAppSettings();
+
+  if (rerender && state.data) {
+    renderWorkspaceContent();
+  }
+
+  if (statusMessage) {
+    setStatus(statusMessage);
+  }
+}
+
+function getBreakingBallDisplayMode() {
+  return state.settings?.breakingBallDisplayMode || BREAKING_BALL_DISPLAY_MODES.STANDARD;
+}
+
+function getBreakingBallDirectionLayout(throwHand) {
+  return throwHand === "left" ? BREAKING_BALL_DIRECTION_LAYOUTS.left : BREAKING_BALL_DIRECTION_LAYOUTS.right;
 }
 
 function clamp(value, min, max) {
@@ -1515,13 +1599,13 @@ function syncBreakingBallsFromEditor(form) {
   const meter = form.querySelector("#breakingBallMeter");
   const parsed = parseBreakingBalls(String(hidden?.value || ""));
   const { stateByFamily } = buildBreakingBallState(parsed);
+  const throwHand = extractThrowingHand(form.querySelector('input[name="hand"]')?.value);
   if (meter) {
-    meter.innerHTML = buildBreakingBallMeterSvg(stateByFamily);
+    meter.innerHTML = buildBreakingBallMeterMarkup(stateByFamily, throwHand);
   }
 }
 
-function buildBreakingBallMeterSvg(stateByFamily) {
-  const family_order = ["slider", "curve", "fork", "sinker", "shoot"];
+function buildBreakingBallRadarSvg(stateByFamily, throwHand) {
   const family_colors = ["#ff6b6b", "#e6a8a8"];
 
   const viewBoxWidth = 240;
@@ -1531,18 +1615,14 @@ function buildBreakingBallMeterSvg(stateByFamily) {
   const meterRadius = 10;
   const meterHeight = 40;
 
-  const startAngle = 0;
-  const anglePerMeter = 45;
-
   let svgHtml = `<svg viewBox="0 0 ${viewBoxWidth} ${viewBoxHeight}" class="breaking-ball-meter-svg" xmlns="http://www.w3.org/2000/svg">`;
 
   svgHtml += `<defs><linearGradient id="meterGrad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:#f0f0f0;stop-opacity:1" /><stop offset="100%" style="stop-color:#e0e0e0;stop-opacity:1" /></linearGradient></defs>`;
 
   svgHtml += `<path d="M ${centerX - meterRadius} ${centerY} A ${meterRadius} ${meterRadius} 0 0 1 ${centerX + meterRadius} ${centerY}" stroke="#d0dae8" stroke-width="1.5" fill="none" />`;
 
-  family_order.forEach((familyId, index) => {
+  getBreakingBallDirectionLayout(throwHand).forEach(({ familyId, angle }) => {
     const balls = stateByFamily[familyId] || [{ name: "", level: 0 }, { name: "", level: 0 }];
-    const angle = startAngle + anglePerMeter * index;
     const angleRad = (angle * Math.PI) / 180;
     const activeBalls = balls.filter((b) => {
       const name = String(b?.name || "").trim();
@@ -1608,6 +1688,97 @@ function buildBreakingBallMeterSvg(stateByFamily) {
   return svgHtml;
 }
 
+function buildBreakingBallArrowSvg(stateByFamily, throwHand) {
+  const viewBoxWidth = 240;
+  const viewBoxHeight = 140;
+  const centerX = viewBoxWidth / 2;
+  const centerY = 50;
+  const guideLength = 42;
+  const labelLength = 80;
+  const arrowDistance = 30;
+  const numberDistance = 0;
+
+  let svgHtml = `<svg viewBox="0 0 ${viewBoxWidth} ${viewBoxHeight}" class="breaking-ball-meter-svg" xmlns="http://www.w3.org/2000/svg">`;
+  svgHtml += `<circle cx="${centerX}" cy="${centerY}" r="10" fill="#f4f7fb" stroke="#d0dae8" stroke-width="1.5" />`;
+
+  getBreakingBallDirectionLayout(throwHand).forEach(({ familyId, angle }) => {
+    const balls = stateByFamily[familyId] || [{ name: "", level: 0 }, { name: "", level: 0 }];
+    const angleRad = (angle * Math.PI) / 180;
+    const normalX = -Math.sin(angleRad);
+    const normalY = Math.cos(angleRad);
+    const activeBalls = balls.filter((b) => {
+      const name = String(b?.name || "").trim();
+      const level = toInt(b?.level, 0);
+      return name && level > 0;
+    });
+
+    if (activeBalls.length === 0) {
+      return;
+    }
+
+    const guideX = centerX + Math.cos(angleRad) * guideLength;
+    const guideY = centerY + Math.sin(angleRad) * guideLength;
+    const labelX = centerX + Math.cos(angleRad) * labelLength;
+    const labelY = centerY + Math.sin(angleRad) * labelLength;
+
+    svgHtml += `<line x1="${centerX}" y1="${centerY}" x2="${guideX}" y2="${guideY}" stroke="#c8d4e3" stroke-width="1.5" stroke-linecap="round" />`;
+
+    const hasTwoBalls = activeBalls.length >= 2;
+    let drawnActiveCount = 0;
+    const ballNames = [];
+
+    balls.forEach((ball) => {
+      const name = String(ball?.name || "").trim();
+      const level = toInt(ball?.level, 0);
+      if (!name || level <= 0) {
+        return;
+      }
+
+      const sideOffset = hasTwoBalls ? (drawnActiveCount === 0 ? -9 : 9) : 0;
+      drawnActiveCount += 1;
+      ballNames.push(name);
+
+      const arrowX = centerX + Math.cos(angleRad) * arrowDistance + normalX * sideOffset;
+      const arrowY = centerY + Math.sin(angleRad) * arrowDistance + normalY * sideOffset;
+      const numberX = arrowX;
+      const numberY = arrowY - numberDistance;
+
+      svgHtml += buildChunkyArrowGlyph(arrowX, arrowY, angle, "#0f6d63", "#0b4f49");
+      svgHtml += `<text x="${numberX}" y="${numberY}" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#ffffff" font-weight="800">${level}</text>`;
+    });
+
+    svgHtml += `<text x="${labelX}" y="${labelY}" text-anchor="middle" dominant-baseline="middle" class="breaking-ball-meter-label" font-size="8" fill="#658299" font-weight="700">${escapeHtml(ballNames.join("/"))}</text>`;
+  });
+
+  svgHtml += `</svg>`;
+  return svgHtml;
+}
+
+function buildChunkyArrowGlyph(x, y, angle, fill = "#0f6d63", stroke = "#0b4f49") {
+  const path = [
+    "M -14 -5",
+    "L 0 -5",
+    "L 0 -10",
+    "L 14 0",
+    "L 0 10",
+    "L 0 5",
+    "L -14 5",
+    "Z"
+  ].join(" ");
+
+  return `
+    <g transform="translate(${x} ${y}) rotate(${angle})">
+      <path d="${path}" fill="${fill}" stroke="${stroke}" stroke-width="1.4" stroke-linejoin="round" />
+    </g>
+  `;
+}
+
+function buildBreakingBallMeterMarkup(stateByFamily, throwHand) {
+  return getBreakingBallDisplayMode() === BREAKING_BALL_DISPLAY_MODES.ARROW
+    ? buildBreakingBallArrowSvg(stateByFamily, throwHand)
+    : buildBreakingBallRadarSvg(stateByFamily, throwHand);
+}
+
 function renderBreakingBallEditorGrid(form) {
   const editor = form.querySelector("#breakingBallEditor");
   const grid = form.querySelector("#breakingBallGrid");
@@ -1623,7 +1794,7 @@ function renderBreakingBallEditorGrid(form) {
   grid.innerHTML = buildBreakingBallGrid(stateByFamily, throwHand);
 
   if (meter) {
-    meter.innerHTML = buildBreakingBallMeterSvg(stateByFamily);
+    meter.innerHTML = buildBreakingBallMeterMarkup(stateByFamily, throwHand);
   }
 
   const extraInput = editor.querySelector('input[name="p_breakingBallsExtra"]');
@@ -2107,6 +2278,90 @@ function showCloseUnsavedPlayerDialog(playerName, playerId) {
       handleAction("cancel");
     }
   });
+}
+
+function showSettingsDialog() {
+  const existing = document.querySelector(".settings-dialog-overlay");
+  if (existing) {
+    const select = existing.querySelector("#breakingBallDisplayMode");
+    if (select instanceof HTMLSelectElement) {
+      select.focus();
+    }
+    return;
+  }
+
+  const dialog = document.createElement("div");
+  dialog.className = "settings-dialog-overlay";
+  dialog.innerHTML = `
+    <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsDialogTitle">
+      <div class="settings-dialog-header">
+        <div>
+          <h2 id="settingsDialogTitle">設定</h2>
+          <p>表示や操作に関する設定を変更できます。</p>
+        </div>
+        <button type="button" class="dialog-icon-btn" data-settings-close aria-label="閉じる">✕</button>
+      </div>
+      <div class="settings-dialog-body">
+        <section class="settings-section">
+          <h3>変化球表示</h3>
+          <label for="breakingBallDisplayMode">表示方式</label>
+          <select id="breakingBallDisplayMode">
+            <option value="${BREAKING_BALL_DISPLAY_MODES.STANDARD}" ${getBreakingBallDisplayMode() === BREAKING_BALL_DISPLAY_MODES.STANDARD ? "selected" : ""}>通常：各方向にバーを表示</option>
+            <option value="${BREAKING_BALL_DISPLAY_MODES.ARROW}" ${getBreakingBallDisplayMode() === BREAKING_BALL_DISPLAY_MODES.ARROW ? "selected" : ""}>新方式：矢印＋強さ数字を表示</option>
+          </select>
+          <p class="settings-help">新方式では方向ごとに矢印を表示し、その上に強さ 1〜7 を数字で表示します。球種名は矢印の先に表示されます。</p>
+        </section>
+      </div>
+      <div class="settings-dialog-actions">
+        <button type="button" class="sub-btn" data-settings-close>キャンセル</button>
+        <button type="button" class="primary" data-settings-save>保存</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(dialog);
+
+  const closeDialog = () => {
+    if (document.body.contains(dialog)) {
+      document.body.removeChild(dialog);
+    }
+    window.removeEventListener("keydown", handleKeydown);
+  };
+
+  const handleKeydown = (event) => {
+    if (event.key === "Escape") {
+      closeDialog();
+    }
+  };
+
+  window.addEventListener("keydown", handleKeydown);
+
+  dialog.querySelectorAll("[data-settings-close]").forEach((button) => {
+    button.addEventListener("click", closeDialog);
+  });
+
+  dialog.querySelector("[data-settings-save]")?.addEventListener("click", () => {
+    const selectedMode = String(dialog.querySelector("#breakingBallDisplayMode")?.value || "").trim();
+    applyAppSettings(
+      {
+        ...state.settings,
+        breakingBallDisplayMode: selectedMode
+      },
+      {
+        rerender: true,
+        statusMessage: "設定を更新しました。"
+      }
+    );
+    closeDialog();
+  });
+
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) {
+      closeDialog();
+    }
+  });
+
+  dialog.querySelector("#breakingBallDisplayMode")?.focus();
 }
 
 function sanitizeIdSeed(text, fallback) {
@@ -3113,6 +3368,7 @@ function applyLoadedData(data, statusMessage) {
 
 async function bootstrap() {
   try {
+    state.settings = loadAppSettings();
     const data = await window.teamApi.load();
     applyLoadedData(data, "新規チームデータを作成しました。");
   } catch (error) {
@@ -3132,6 +3388,10 @@ window.teamApi.onMenuSaveAsRequest(() => {
 
 window.teamApi.onMenuOpenRequest(() => {
   void openDataFileFromMenu();
+});
+
+window.teamApi.onMenuOpenSettingsRequest(() => {
+  showSettingsDialog();
 });
 
 window.teamApi.onRequestCheckUnsavedData(async () => {

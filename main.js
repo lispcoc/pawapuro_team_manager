@@ -124,6 +124,19 @@ function buildApplicationMenu() {
         { type: "separator" },
         process.platform === "darwin" ? { role: "close" } : { role: "quit" }
       ]
+    },
+    {
+      label: "設定",
+      submenu: [
+        {
+          label: "表示設定...",
+          accelerator: "CmdOrCtrl+,",
+          click: (_menuItem, browserWindow) => {
+            if (!browserWindow) return;
+            browserWindow.webContents.send("menu:open-settings-request");
+          }
+        }
+      ]
     }
   ];
 

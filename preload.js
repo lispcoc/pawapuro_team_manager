@@ -26,6 +26,11 @@ contextBridge.exposeInMainWorld("teamApi", {
       handler();
     });
   },
+  onMenuOpenSettingsRequest: (handler) => {
+    ipcRenderer.on("menu:open-settings-request", () => {
+      handler();
+    });
+  },
   onRequestCheckUnsavedData: (handler) => {
     ipcRenderer.on("request-check-unsaved-data", async () => {
       const result = await handler();
