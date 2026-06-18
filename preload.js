@@ -3,7 +3,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("teamApi", {
   load: () => ipcRenderer.invoke("teams:load"),
   save: (payload, options) => ipcRenderer.invoke("teams:save", payload, options),
-  openFile: () => ipcRenderer.invoke("teams:open-file"),
+  openFile: (options) => ipcRenderer.invoke("teams:open-file", options),
+  openSpecificFile: (filePath) => ipcRenderer.invoke("teams:open-specific-file", filePath),
   confirmSaveBeforeOpen: () => ipcRenderer.invoke("teams:confirm-save-before-open"),
   notifyCloseApp: () => ipcRenderer.send("close-app"),
   onDataLoaded: (handler) => {

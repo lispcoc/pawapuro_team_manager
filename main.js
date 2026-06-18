@@ -4,6 +4,10 @@ const fs = require("fs/promises");
 
 const DATA_FILE_FILTERS = [{ name: "JSON", extensions: ["json"] }];
 const APP_TITLE = "パワプロ チームマネージャ";
+const OPEN_DIALOG_DEFAULT_DIRECTORY_MODES = {
+  DOCUMENTS: "documents",
+  LAST_OPENED_DIRECTORY: "last-opened-directory"
+};
 
 let currentDataPath = null;
 
@@ -77,12 +81,28 @@ async function saveData(payload, options = {}) {
   return { canceled: false, dataPath };
 }
 
-async function promptOpenDataFile(browserWindow) {
+function resolveOpenDialogDefaultPath(options = {}) {
+  const mode = String(options?.defaultDirectoryMode || OPEN_DIALOG_DEFAULT_DIRECTORY_MODES.DOCUMENTS).trim();
+  const explicitLastOpenedPath = String(options?.lastOpenedFilePath || "").trim();
+
+  if (mode === OPEN_DIALOG_DEFAULT_DIRECTORY_MODES.LAST_OPENED_DIRECTORY) {
+    const candidatePaths = [explicitLastOpenedPath, currentDataPath].filter(Boolean);
+    for (const candidatePath of candidatePaths) {
+      if (path.isAbsolute(candidatePath)) {
+        return path.dirname(candidatePath);
+      }
+    }
+  }
+
+  return app.getPath("documents");
+}
+
+async function promptOpenDataFileWithOptions(browserWindow, options = {}) {
   const result = await dialog.showOpenDialog(browserWindow, {
     title: "チームデータを開く",
     properties: ["openFile"],
     filters: DATA_FILE_FILTERS,
-    defaultPath: currentDataPath || app.getPath("documents")
+    defaultPath: resolveOpenDialogDefaultPath(options)
   });
 
   if (result.canceled || result.filePaths.length === 0) {
@@ -242,9 +262,9 @@ ipcMain.handle("teams:save", async (event, payload, options = {}) => {
   return { ok: true, canceled: false, dataPath: result.dataPath };
 });
 
-ipcMain.handle("teams:open-file", async (event) => {
+ipcMain.handle("teams:open-file", async (event, options = {}) => {
   const browserWindow = BrowserWindow.fromWebContents(event.sender);
-  const selectedPath = await promptOpenDataFile(browserWindow);
+  const selectedPath = await promptOpenDataFileWithOptions(browserWindow, options);
   if (!selectedPath) {
     return { ok: false, canceled: true };
   }
@@ -252,6 +272,22 @@ ipcMain.handle("teams:open-file", async (event) => {
   const data = await loadData(selectedPath);
   updateWindowTitle(browserWindow);
   return { ok: true, canceled: false, dataPath: selectedPath, data };
+});
+
+ipcMain.handle("teams:open-specific-file", async (event, filePath) => {
+  const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  const targetPath = String(filePath || "").trim();
+  if (!targetPath) {
+    return { ok: false, canceled: true, error: "ファイルパスが指定されていません。" };
+  }
+
+  try {
+    const data = await loadData(targetPath);
+    updateWindowTitle(browserWindow);
+    return { ok: true, canceled: false, dataPath: targetPath, data };
+  } catch (error) {
+    return { ok: false, canceled: false, error: error.message || "ファイルを開けませんでした。" };
+  }
 });
 
 ipcMain.handle("teams:confirm-save-before-open", async (event) => {

@@ -444,6 +444,15 @@ const BREAKING_BALL_DISPLAY_MODES = {
   STANDARD: "standard",
   ARROW: "arrow"
 };
+const STARTUP_OPEN_MODES = {
+  NEW_FILE: "new-file",
+  OPEN_FILE_DIALOG: "open-file-dialog",
+  OPEN_LAST_EDITED_FILE: "open-last-edited-file"
+};
+const FILE_DIALOG_DEFAULT_DIRECTORY_MODES = {
+  DOCUMENTS: "documents",
+  LAST_OPENED_DIRECTORY: "last-opened-directory"
+};
 
 const BREAKING_BALL_DIRECTION_LAYOUTS = {
   right: [
@@ -562,7 +571,10 @@ function escapeHtml(text) {
 
 function createDefaultSettings() {
   return {
-    breakingBallDisplayMode: BREAKING_BALL_DISPLAY_MODES.STANDARD
+    breakingBallDisplayMode: BREAKING_BALL_DISPLAY_MODES.STANDARD,
+    startupOpenMode: STARTUP_OPEN_MODES.NEW_FILE,
+    fileDialogDefaultDirectoryMode: FILE_DIALOG_DEFAULT_DIRECTORY_MODES.DOCUMENTS,
+    lastEditedFilePath: ""
   };
 }
 
@@ -570,10 +582,21 @@ function normalizeAppSettings(settings) {
   const base = createDefaultSettings();
   const mode = String(settings?.breakingBallDisplayMode || "").trim();
   const validModes = new Set(Object.values(BREAKING_BALL_DISPLAY_MODES));
+  const startupOpenMode = String(settings?.startupOpenMode || "").trim();
+  const validStartupOpenModes = new Set(Object.values(STARTUP_OPEN_MODES));
+  const fileDialogDefaultDirectoryMode = String(settings?.fileDialogDefaultDirectoryMode || "").trim();
+  const validDirectoryModes = new Set(Object.values(FILE_DIALOG_DEFAULT_DIRECTORY_MODES));
+  const lastEditedFilePath = String(settings?.lastEditedFilePath || "").trim();
+
   return {
     ...base,
     ...(settings && typeof settings === "object" ? settings : {}),
-    breakingBallDisplayMode: validModes.has(mode) ? mode : base.breakingBallDisplayMode
+    breakingBallDisplayMode: validModes.has(mode) ? mode : base.breakingBallDisplayMode,
+    startupOpenMode: validStartupOpenModes.has(startupOpenMode) ? startupOpenMode : base.startupOpenMode,
+    fileDialogDefaultDirectoryMode: validDirectoryModes.has(fileDialogDefaultDirectoryMode)
+      ? fileDialogDefaultDirectoryMode
+      : base.fileDialogDefaultDirectoryMode,
+    lastEditedFilePath
   };
 }
 
@@ -614,6 +637,33 @@ function applyAppSettings(nextSettings, options = {}) {
 
 function getBreakingBallDisplayMode() {
   return state.settings?.breakingBallDisplayMode || BREAKING_BALL_DISPLAY_MODES.STANDARD;
+}
+
+function getStartupOpenMode() {
+  return state.settings?.startupOpenMode || STARTUP_OPEN_MODES.NEW_FILE;
+}
+
+function getFileDialogDefaultDirectoryMode() {
+  return state.settings?.fileDialogDefaultDirectoryMode || FILE_DIALOG_DEFAULT_DIRECTORY_MODES.DOCUMENTS;
+}
+
+function getLastEditedFilePath() {
+  return String(state.settings?.lastEditedFilePath || "").trim();
+}
+
+function rememberLastEditedFilePath(dataPath) {
+  const nextPath = String(dataPath || "").trim();
+  if (!nextPath || nextPath === getLastEditedFilePath()) {
+    return;
+  }
+
+  applyAppSettings(
+    {
+      ...state.settings,
+      lastEditedFilePath: nextPath
+    },
+    { rerender: false }
+  );
 }
 
 function getBreakingBallDirectionLayout(throwHand) {
@@ -998,6 +1048,78 @@ function formatRankedNumber(value) {
   return `<span class="roster-rank grade-${grade}">${grade}</span><span class="roster-value">${safeValue}</span>`;
 }
 
+function getBreakingBallOrderKeyFromNineCounterClockwise(angle) {
+  const normalized = ((toInt(angle, 0) % 360) + 360) % 360;
+  return (180 - normalized + 360) % 360;
+}
+
+function getPlayerBreakingBallDirectionalEntries(player) {
+  const rawBreakingBalls = Array.isArray(player?.pitcher?.breakingBalls) ? player.pitcher.breakingBalls : [];
+  const { stateByFamily, extras } = buildBreakingBallState(rawBreakingBalls);
+  const throwHand = extractThrowingHand(player?.hand);
+  const sortedDirections = [...getBreakingBallDirectionLayout(throwHand)].sort(
+    (left, right) => getBreakingBallOrderKeyFromNineCounterClockwise(left.angle) - getBreakingBallOrderKeyFromNineCounterClockwise(right.angle)
+  );
+  const entries = [];
+
+  sortedDirections.forEach(({ familyId, angle }) => {
+    const balls = stateByFamily[familyId] || [];
+    balls.forEach((ball) => {
+      const name = String(ball?.name || "").trim();
+      const level = clamp(toInt(ball?.level, 0), 0, 7);
+      if (!name || level <= 0) {
+        return;
+      }
+      entries.push({ name, level, angle });
+    });
+  });
+
+  for (const extraBall of extras) {
+    const name = String(extraBall?.name || "").trim();
+    const level = clamp(toInt(extraBall?.level, 0), 0, 7);
+    if (!name || level <= 0) {
+      continue;
+    }
+    entries.push({ name, level, angle: null });
+  }
+
+  return entries;
+}
+
+function getPlayerBreakingBallTotal(player) {
+  return getPlayerBreakingBallDirectionalEntries(player).reduce((sum, entry) => sum + entry.level, 0);
+}
+
+function buildRosterBreakingBallArrowIconSvg(angle, level) {
+  return `
+    <svg viewBox="0 0 36 24" class="roster-breaking-ball-icon" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      ${buildChunkyArrowGlyph(18, 12, angle, "#0f6d63", "#0b4f49")}
+      <text x="18" y="12" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#ffffff" font-weight="800">${level}</text>
+    </svg>
+  `;
+}
+
+function buildPlayerBreakingBallDirectionCell(player) {
+  const entries = getPlayerBreakingBallDirectionalEntries(player);
+  if (!entries.length) {
+    return "-";
+  }
+
+  return `
+    <div class="roster-breaking-ball-list">
+      ${entries
+        .map((entry) => {
+          const title = `${entry.name} ${entry.level}`;
+          if (typeof entry.angle !== "number") {
+            return `<span class="roster-breaking-ball-item" title="${escapeHtml(title)}"><span class="roster-breaking-ball-name">${escapeHtml(title)}</span></span>`;
+          }
+          return `<span class="roster-breaking-ball-item" title="${escapeHtml(title)}">${buildRosterBreakingBallArrowIconSvg(entry.angle, entry.level)}<span class="roster-breaking-ball-name">${escapeHtml(entry.name)}</span></span>`;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
 function getComparableValue(player, key) {
   const hitter = player.hitter || {};
   const pitcher = player.pitcher || {};
@@ -1033,6 +1155,8 @@ function getComparableValue(player, key) {
       return toInt(pitcher.control, 0);
     case "stamina":
       return toInt(pitcher.stamina, 0);
+    case "breakingTotal":
+      return getPlayerBreakingBallTotal(player);
     default:
       return "";
   }
@@ -1079,7 +1203,9 @@ function getRosterColumns() {
   const pitcherColumns = [
     { key: "velocity", label: "球速", sortable: true, cell: (player) => `${player.pitcher?.velocity ?? "-"}` },
     { key: "control", label: "コントロール", sortable: true, cell: (player) => formatRankedNumber(player.pitcher?.control) },
-    { key: "stamina", label: "スタミナ", sortable: true, cell: (player) => formatRankedNumber(player.pitcher?.stamina) }
+    { key: "stamina", label: "スタミナ", sortable: true, cell: (player) => formatRankedNumber(player.pitcher?.stamina) },
+    { key: "breakingTotal", label: "総変化量", sortable: true, cell: (player) => `<span class="roster-breaking-total">${getPlayerBreakingBallTotal(player)}</span>` },
+    { key: "breakingDetail", label: "各変化量", sortable: false, cell: (player) => buildPlayerBreakingBallDirectionCell(player) }
   ];
 
   if (state.rosterViewMode === "hitter") {
@@ -2283,7 +2409,7 @@ function showCloseUnsavedPlayerDialog(playerName, playerId) {
 function showSettingsDialog() {
   const existing = document.querySelector(".settings-dialog-overlay");
   if (existing) {
-    const select = existing.querySelector("#breakingBallDisplayMode");
+    const select = existing.querySelector("#startupOpenMode");
     if (select instanceof HTMLSelectElement) {
       select.focus();
     }
@@ -2302,6 +2428,23 @@ function showSettingsDialog() {
         <button type="button" class="dialog-icon-btn" data-settings-close aria-label="閉じる">✕</button>
       </div>
       <div class="settings-dialog-body">
+        <section class="settings-section">
+          <h3>起動時のファイルオープン</h3>
+          <label for="startupOpenMode">起動時の動作</label>
+          <select id="startupOpenMode">
+            <option value="${STARTUP_OPEN_MODES.NEW_FILE}" ${getStartupOpenMode() === STARTUP_OPEN_MODES.NEW_FILE ? "selected" : ""}>新規ファイル</option>
+            <option value="${STARTUP_OPEN_MODES.OPEN_FILE_DIALOG}" ${getStartupOpenMode() === STARTUP_OPEN_MODES.OPEN_FILE_DIALOG ? "selected" : ""}>選択してファイルを開く</option>
+            <option value="${STARTUP_OPEN_MODES.OPEN_LAST_EDITED_FILE}" ${getStartupOpenMode() === STARTUP_OPEN_MODES.OPEN_LAST_EDITED_FILE ? "selected" : ""}>最後に編集したファイルを開く</option>
+          </select>
+        </section>
+        <section class="settings-section">
+          <h3>ファイル選択</h3>
+          <label for="fileDialogDefaultDirectoryMode">ファイル選択時の既定ディレクトリ</label>
+          <select id="fileDialogDefaultDirectoryMode">
+            <option value="${FILE_DIALOG_DEFAULT_DIRECTORY_MODES.DOCUMENTS}" ${getFileDialogDefaultDirectoryMode() === FILE_DIALOG_DEFAULT_DIRECTORY_MODES.DOCUMENTS ? "selected" : ""}>マイドキュメント</option>
+            <option value="${FILE_DIALOG_DEFAULT_DIRECTORY_MODES.LAST_OPENED_DIRECTORY}" ${getFileDialogDefaultDirectoryMode() === FILE_DIALOG_DEFAULT_DIRECTORY_MODES.LAST_OPENED_DIRECTORY ? "selected" : ""}>最後に開いたファイルのディレクトリ</option>
+          </select>
+        </section>
         <section class="settings-section">
           <h3>変化球表示</h3>
           <label for="breakingBallDisplayMode">表示方式</label>
@@ -2341,10 +2484,14 @@ function showSettingsDialog() {
   });
 
   dialog.querySelector("[data-settings-save]")?.addEventListener("click", () => {
+    const selectedStartupOpenMode = String(dialog.querySelector("#startupOpenMode")?.value || "").trim();
+    const selectedDirectoryMode = String(dialog.querySelector("#fileDialogDefaultDirectoryMode")?.value || "").trim();
     const selectedMode = String(dialog.querySelector("#breakingBallDisplayMode")?.value || "").trim();
     applyAppSettings(
       {
         ...state.settings,
+        startupOpenMode: selectedStartupOpenMode,
+        fileDialogDefaultDirectoryMode: selectedDirectoryMode,
         breakingBallDisplayMode: selectedMode
       },
       {
@@ -2361,7 +2508,7 @@ function showSettingsDialog() {
     }
   });
 
-  dialog.querySelector("#breakingBallDisplayMode")?.focus();
+  dialog.querySelector("#startupOpenMode")?.focus();
 }
 
 function sanitizeIdSeed(text, fallback) {
@@ -3306,6 +3453,7 @@ async function saveAll(options = {}) {
     }
 
     state.lastSavedSnapshot = serializeDataSnapshot(state.data);
+    rememberLastEditedFilePath(result?.dataPath);
     const fileLabel = result?.dataPath ? ` (${result.dataPath})` : "";
     setStatus(`JSONへ保存しました。${fileLabel}`);
     return true;
@@ -3333,19 +3481,23 @@ async function openDataFileFromMenu() {
   }
 
   try {
-    const result = await window.teamApi.openFile();
+    const result = await window.teamApi.openFile({
+      defaultDirectoryMode: getFileDialogDefaultDirectoryMode(),
+      lastOpenedFilePath: getLastEditedFilePath()
+    });
     if (!result?.ok) {
       return;
     }
 
     const pathLabel = result.dataPath ? ` ${result.dataPath}` : "";
-    applyLoadedData(result.data, `ファイルを読み込みました。${pathLabel}`);
+    applyLoadedData(result.data, `ファイルを読み込みました。${pathLabel}`, { dataPath: result.dataPath });
   } catch (error) {
     setStatus(`読み込み失敗: ${error.message}`);
   }
 }
 
-function applyLoadedData(data, statusMessage) {
+function applyLoadedData(data, statusMessage, options = {}) {
+  const dataPath = String(options?.dataPath || "").trim();
   state.data = data;
   for (const team of state.data.teams) {
     for (const player of team.players) {
@@ -3360,6 +3512,7 @@ function applyLoadedData(data, statusMessage) {
   state.dirtyPlayerTabs.clear();
   state.activeWorkspaceTab = ROSTER_TAB_ID;
   state.lastSavedSnapshot = serializeDataSnapshot(state.data);
+  rememberLastEditedFilePath(dataPath);
 
   renderWorkspaceTabs();
   renderWorkspaceContent();
@@ -3369,6 +3522,42 @@ function applyLoadedData(data, statusMessage) {
 async function bootstrap() {
   try {
     state.settings = loadAppSettings();
+    const startupMode = getStartupOpenMode();
+
+    if (startupMode === STARTUP_OPEN_MODES.OPEN_FILE_DIALOG) {
+      const result = await window.teamApi.openFile({
+        defaultDirectoryMode: getFileDialogDefaultDirectoryMode(),
+        lastOpenedFilePath: getLastEditedFilePath()
+      });
+
+      if (result?.ok) {
+        const pathLabel = result.dataPath ? ` ${result.dataPath}` : "";
+        applyLoadedData(result.data, `ファイルを読み込みました。${pathLabel}`, { dataPath: result.dataPath });
+        return;
+      }
+
+      const data = await window.teamApi.load();
+      applyLoadedData(data, "起動時のファイル選択をキャンセルしたため、新規チームデータを作成しました。");
+      return;
+    }
+
+    if (startupMode === STARTUP_OPEN_MODES.OPEN_LAST_EDITED_FILE) {
+      const lastEditedFilePath = getLastEditedFilePath();
+      if (lastEditedFilePath) {
+        const result = await window.teamApi.openSpecificFile(lastEditedFilePath);
+        if (result?.ok) {
+          const pathLabel = result.dataPath ? ` ${result.dataPath}` : "";
+          applyLoadedData(result.data, `ファイルを読み込みました。${pathLabel}`, { dataPath: result.dataPath });
+          return;
+        }
+
+        const reason = result?.error ? ` (${result.error})` : "";
+        const data = await window.teamApi.load();
+        applyLoadedData(data, `最後に編集したファイルを開けなかったため、新規チームデータを作成しました。${reason}`);
+        return;
+      }
+    }
+
     const data = await window.teamApi.load();
     applyLoadedData(data, "新規チームデータを作成しました。");
   } catch (error) {
@@ -3416,7 +3605,7 @@ window.teamApi.onDataLoaded((payload) => {
   }
 
   const pathLabel = payload.dataPath ? ` ${payload.dataPath}` : "";
-  applyLoadedData(payload.data, `ファイルを読み込みました。${pathLabel}`);
+  applyLoadedData(payload.data, `ファイルを読み込みました。${pathLabel}`, { dataPath: payload.dataPath });
 });
 
 bootstrap();
