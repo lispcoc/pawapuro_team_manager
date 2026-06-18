@@ -452,6 +452,10 @@ textarea {
   color: var(--ink);
 }
 
+input[type="checkbox"] {
+  width: auto;
+}
+
 textarea {
   min-height: 72px;
   resize: vertical;

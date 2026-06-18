@@ -572,6 +572,7 @@ function escapeHtml(text) {
 function createDefaultSettings() {
   return {
     breakingBallDisplayMode: BREAKING_BALL_DISPLAY_MODES.STANDARD,
+    breakingBallDisplayNameInList: true,
     startupOpenMode: STARTUP_OPEN_MODES.NEW_FILE,
     fileDialogDefaultDirectoryMode: FILE_DIALOG_DEFAULT_DIRECTORY_MODES.DOCUMENTS,
     lastEditedFilePath: ""
@@ -582,6 +583,7 @@ function normalizeAppSettings(settings) {
   const base = createDefaultSettings();
   const mode = String(settings?.breakingBallDisplayMode || "").trim();
   const validModes = new Set(Object.values(BREAKING_BALL_DISPLAY_MODES));
+  const breakingBallDisplayNameInList = Boolean(settings?.breakingBallDisplayNameInList);
   const startupOpenMode = String(settings?.startupOpenMode || "").trim();
   const validStartupOpenModes = new Set(Object.values(STARTUP_OPEN_MODES));
   const fileDialogDefaultDirectoryMode = String(settings?.fileDialogDefaultDirectoryMode || "").trim();
@@ -592,6 +594,7 @@ function normalizeAppSettings(settings) {
     ...base,
     ...(settings && typeof settings === "object" ? settings : {}),
     breakingBallDisplayMode: validModes.has(mode) ? mode : base.breakingBallDisplayMode,
+    breakingBallDisplayNameInList,
     startupOpenMode: validStartupOpenModes.has(startupOpenMode) ? startupOpenMode : base.startupOpenMode,
     fileDialogDefaultDirectoryMode: validDirectoryModes.has(fileDialogDefaultDirectoryMode)
       ? fileDialogDefaultDirectoryMode
@@ -637,6 +640,10 @@ function applyAppSettings(nextSettings, options = {}) {
 
 function getBreakingBallDisplayMode() {
   return state.settings?.breakingBallDisplayMode || BREAKING_BALL_DISPLAY_MODES.STANDARD;
+}
+
+function getBreakingBallDisplayNameInList() {
+  return state.settings?.breakingBallDisplayNameInList ?? true;
 }
 
 function getStartupOpenMode() {
@@ -1104,6 +1111,7 @@ function buildPlayerBreakingBallDirectionCell(player) {
   if (!entries.length) {
     return "-";
   }
+  const breakingBallDisplayNameInList = state.settings?.breakingBallDisplayNameInList ?? true;
 
   return `
     <div class="roster-breaking-ball-list">
@@ -1113,7 +1121,11 @@ function buildPlayerBreakingBallDirectionCell(player) {
           if (typeof entry.angle !== "number") {
             return `<span class="roster-breaking-ball-item" title="${escapeHtml(title)}"><span class="roster-breaking-ball-name">${escapeHtml(title)}</span></span>`;
           }
-          return `<span class="roster-breaking-ball-item" title="${escapeHtml(title)}">${buildRosterBreakingBallArrowIconSvg(entry.angle, entry.level)}<span class="roster-breaking-ball-name">${escapeHtml(entry.name)}</span></span>`;
+          if (breakingBallDisplayNameInList) {
+            return `<span class="roster-breaking-ball-item" title="${escapeHtml(title)}">${buildRosterBreakingBallArrowIconSvg(entry.angle, entry.level)}<span class="roster-breaking-ball-name">${escapeHtml(entry.name)}</span></span>`;
+          } else {
+            return `<span title="${escapeHtml(title)}">${buildRosterBreakingBallArrowIconSvg(entry.angle, entry.level)}</span>`;
+          }
         })
         .join("")}
     </div>
@@ -2454,6 +2466,13 @@ function showSettingsDialog() {
           </select>
           <p class="settings-help">新方式では方向ごとに矢印を表示し、その上に強さ 1〜7 を数字で表示します。球種名は矢印の先に表示されます。</p>
         </section>
+        <section class="settings-section">
+          <h3>リスト内での変化球表示</h3>
+          <div>
+            <input type="checkbox" id="breakingBallDisplayNameInList" ${getBreakingBallDisplayNameInList() ? "checked" : ""} />
+            <label for="breakingBallDisplayNameInList">変化球名の表示</label>
+          </div>
+        </section>
       </div>
       <div class="settings-dialog-actions">
         <button type="button" class="sub-btn" data-settings-close>キャンセル</button>
@@ -2487,12 +2506,14 @@ function showSettingsDialog() {
     const selectedStartupOpenMode = String(dialog.querySelector("#startupOpenMode")?.value || "").trim();
     const selectedDirectoryMode = String(dialog.querySelector("#fileDialogDefaultDirectoryMode")?.value || "").trim();
     const selectedMode = String(dialog.querySelector("#breakingBallDisplayMode")?.value || "").trim();
+    const breakingBallDisplayNameInList = Boolean(dialog.querySelector("#breakingBallDisplayNameInList")?.checked);
     applyAppSettings(
       {
         ...state.settings,
         startupOpenMode: selectedStartupOpenMode,
         fileDialogDefaultDirectoryMode: selectedDirectoryMode,
-        breakingBallDisplayMode: selectedMode
+        breakingBallDisplayMode: selectedMode,
+        breakingBallDisplayNameInList
       },
       {
         rerender: true,
