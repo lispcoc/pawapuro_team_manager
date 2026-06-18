@@ -1099,7 +1099,7 @@ function getPlayerBreakingBallTotal(player) {
 
 function buildRosterBreakingBallArrowIconSvg(angle, level) {
   return `
-    <svg viewBox="0 0 36 24" class="roster-breaking-ball-icon" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+    <svg viewBox="0 0 36 24" class="roster-breaking-ball-icon" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" style="overflow: visible;">
       ${buildChunkyArrowGlyph(18, 12, angle, "#0f6d63", "#0b4f49")}
       <text x="18" y="12" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#ffffff" font-weight="800">${level}</text>
     </svg>
@@ -1124,7 +1124,7 @@ function buildPlayerBreakingBallDirectionCell(player) {
           if (breakingBallDisplayNameInList) {
             return `<span class="roster-breaking-ball-item" title="${escapeHtml(title)}">${buildRosterBreakingBallArrowIconSvg(entry.angle, entry.level)}<span class="roster-breaking-ball-name">${escapeHtml(entry.name)}</span></span>`;
           } else {
-            return `<span title="${escapeHtml(title)}">${buildRosterBreakingBallArrowIconSvg(entry.angle, entry.level)}</span>`;
+            return `<span class="roster-breaking-ball-item-no-name" title="${escapeHtml(title)}">${buildRosterBreakingBallArrowIconSvg(entry.angle, entry.level)}</span>`;
           }
         })
         .join("")}

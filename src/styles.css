@@ -428,6 +428,12 @@ tr:hover td {
   white-space: nowrap;
 }
 
+.roster-breaking-ball-item-no-name {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
 .roster-breaking-ball-icon {
   width: 30px;
   height: 20px;
