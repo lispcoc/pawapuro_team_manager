@@ -392,7 +392,7 @@ const BREAKING_BALL_FAMILIES = [
   {
     id: "straight",
     label: "ストレート系",
-    hasLevel: false,
+    hasLevel: true,
     options: ["ツーシーム", "ツーシームファスト", "ムービングファスト", "超スローボール"]
   },
   {
@@ -456,6 +456,7 @@ const FILE_DIALOG_DEFAULT_DIRECTORY_MODES = {
 
 const BREAKING_BALL_DIRECTION_LAYOUTS = {
   right: [
+    { familyId: "straight", angle: 270 },
     { familyId: "slider", angle: 0 },
     { familyId: "curve", angle: 45 },
     { familyId: "fork", angle: 90 },
@@ -463,6 +464,7 @@ const BREAKING_BALL_DIRECTION_LAYOUTS = {
     { familyId: "shoot", angle: 180 }
   ],
   left: [
+    { familyId: "straight", angle: 270 },
     { familyId: "shoot", angle: 0 },
     { familyId: "sinker", angle: 45 },
     { familyId: "fork", angle: 90 },
@@ -1099,7 +1101,7 @@ function getPlayerBreakingBallTotal(player) {
 
 function buildRosterBreakingBallArrowIconSvg(angle, level) {
   return `
-    <svg viewBox="0 0 36 24" class="roster-breaking-ball-icon" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" style="overflow: visible;">
+    <svg viewBox="4 0 28 24" class="roster-breaking-ball-icon" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" style="overflow: visible;">
       ${buildChunkyArrowGlyph(18, 12, angle, "#0f6d63", "#0b4f49")}
       <text x="18" y="12" text-anchor="middle" dominant-baseline="central" font-size="10" fill="#ffffff" font-weight="800">${level}</text>
     </svg>
@@ -1828,12 +1830,14 @@ function buildBreakingBallRadarSvg(stateByFamily, throwHand) {
 
 function buildBreakingBallArrowSvg(stateByFamily, throwHand) {
   const viewBoxWidth = 240;
-  const viewBoxHeight = 140;
+  const viewBoxHeight = 160;
   const centerX = viewBoxWidth / 2;
   const centerY = 50;
   const guideLength = 42;
   const labelLength = 80;
-  const arrowDistance = 30;
+  const straightLabelLength = 30;
+  const defaultArrowDistance = 45;
+  const straightArrowDistance = 10;
   const numberDistance = 0;
 
   let svgHtml = `<svg viewBox="0 0 ${viewBoxWidth} ${viewBoxHeight}" class="breaking-ball-meter-svg" xmlns="http://www.w3.org/2000/svg">`;
@@ -1844,6 +1848,7 @@ function buildBreakingBallArrowSvg(stateByFamily, throwHand) {
     const angleRad = (angle * Math.PI) / 180;
     const normalX = -Math.sin(angleRad);
     const normalY = Math.cos(angleRad);
+    const isStraight = familyId === "straight";
     const activeBalls = balls.filter((b) => {
       const name = String(b?.name || "").trim();
       const level = toInt(b?.level, 0);
@@ -1856,20 +1861,26 @@ function buildBreakingBallArrowSvg(stateByFamily, throwHand) {
 
     const guideX = centerX + Math.cos(angleRad) * guideLength;
     const guideY = centerY + Math.sin(angleRad) * guideLength;
-    const labelX = centerX + Math.cos(angleRad) * labelLength;
-    const labelY = centerY + Math.sin(angleRad) * labelLength;
+    const currentLabelLength = isStraight ? straightLabelLength : labelLength;
+    const labelX = centerX + Math.cos(angleRad) * currentLabelLength;
+    const labelY = centerY + Math.sin(angleRad) * currentLabelLength;
 
-    svgHtml += `<line x1="${centerX}" y1="${centerY}" x2="${guideX}" y2="${guideY}" stroke="#c8d4e3" stroke-width="1.5" stroke-linecap="round" />`;
+    svgHtml += `<line x1="${centerX}" y1="${centerY}" x2="${guideX}" y2="${guideY}" stroke="#c8d4e3" stroke-width="0" stroke-linecap="round" />`;
 
     const hasTwoBalls = activeBalls.length >= 2;
     let drawnActiveCount = 0;
     const ballNames = [];
+    const arrowDistance = isStraight ? straightArrowDistance : defaultArrowDistance;
 
     balls.forEach((ball) => {
       const name = String(ball?.name || "").trim();
-      const level = toInt(ball?.level, 0);
+      let level = toInt(ball?.level, 0);
       if (!name || level <= 0) {
         return;
+      }
+
+      if (isStraight) {
+        level = 1;
       }
 
       const sideOffset = hasTwoBalls ? (drawnActiveCount === 0 ? -9 : 9) : 0;

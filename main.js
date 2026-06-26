@@ -94,7 +94,11 @@ function resolveOpenDialogDefaultPath(options = {}) {
     }
   }
 
-  return app.getPath("documents");
+  if (path.isAbsolute(process.execPath)) {
+    return path.dirname(process.execPath);
+  }
+
+  return app.getAppPath();
 }
 
 async function promptOpenDataFileWithOptions(browserWindow, options = {}) {

@@ -414,14 +414,14 @@ tr:hover td {
   justify-content: flex-start;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 2px;
 }
 
 .roster-breaking-ball-item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 6px;
+  padding: 2px 0px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--panel);
